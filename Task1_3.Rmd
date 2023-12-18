@@ -1,0 +1,125 @@
+---
+title: "Untitled"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(forcats)
+library(hms)
+library(haven)
+
+```
+
+```{r}
+getwd()
+
+```
+
+
+## GitHub Documents
+
+This is an R Markdown format used for publishing markdown documents to GitHub. When you click the **Knit** button all R code chunks are run and a markdown file (.md) suitable for publishing to GitHub is generated.
+
+## Data Preparation
+
+Loading required data:
+
+```{r cars}
+#Loading survey data
+sur <- readRDS("survey/meof_usa_survey_df.RDS")
+#Loading data of web tracking
+web <- readRDS("tracking/meof_usa_web_df.RDS")
+#Loading timezones data
+tf <- readRDS("tracking/time_zones.RDS")
+
+#We need to take data on digit code of states
+url <- "https://www2.census.gov/geo/docs/reference/state.txt"
+download.file(url, destfile = "state.txt", mode = "wb")
+
+# Read the text file into a dataframe
+state_df <- read.table("state.txt", header = TRUE, sep = "|")
+
+```
+
+Creating dataframe containing only the Netflix content consumption
+
+```{r}
+# # Step 1: Filtering and merging Netflix data
+# net_st <- web %>% 
+#   filter(grepl("netflix", domain, ignore.case = TRUE)) %>%
+#   semi_join(sur %>% select(personid, inputstate) %>% filter(!is.na(inputstate)) %>% distinct(), by = "personid")
+# 
+# #Preparing data of state_df for merging:
+# state_df <- state_df %>% 
+#   rename(
+#     inputstate = STATE,
+#     state = STATE_NAME
+#   )
+# 
+# # Step 2: Merging state_df data
+# net_st <- net_st %>% 
+#   left_join(state_df %>% select(inputstate, state), by = "inputstate")
+# 
+# # Step 3: Adding timezone variable
+# net_st <- net_st %>% 
+#   left_join(tf, by = "state")
+```
+
+
+```{r}
+#filtering the domain variable only by Netflix:
+netflix <- web %>% 
+  filter(grepl("netflix", domain, ignore.case = TRUE))
+#merging netflix data adding data on state of residence of users
+net_st <- merge(netflix, sur[, c("personid", "inputstate")], by = "personid", all.x = FALSE)
+#removing NAs and duplicated data
+net_st <- net_st %>%
+  filter(!is.na(inputstate)) %>%
+  distinct()
+
+#Preparing data of state_df for merging:
+
+state_df <- state_df %>% 
+  rename(
+    inputstate = STATE,
+    state = STATE_NAME
+  )
+#Firstly, we merge net_sf dataframe to add names of states in addition to digit codes
+net_st2 <- merge(net_st, state_df[, c("state", "inputstate")], by = "inputstate", all.x = FALSE)
+#Then, we add timezone variable from tz dataframe
+net_st3 <- merge(net_st2, tf, by = "state")
+
+
+```
+
+Now we have the dataframe with appropriate timezone, but we need to convert timestamps and extract weekdays for plotting 
+
+```{r}
+#Using lubridate library to change type of data in timestamp(used_at) variable
+net_st3$used_at <- ymd_hms(net_st3$used_at, tz = "UTC")
+#Converting timestamps according time zones and creating variable timestamps
+net_st3$timestamps <- with_tz(net_st3$used_at, tzone = net_st3$time_zone)
+
+#Using the Lubridate creating weekdays variable
+net_st3$weekdays <- wday(net_st3$timestamps)
+
+#Extracting data on the level of hour-minute-second
+
+net_st3$hms <- as_hms(net_st3$timestamps)
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
